@@ -1,15 +1,5 @@
 const address1 = document.getElementById('gointospace');
 const address2 = document.getElementById('gointospace2');
-const urlPattern = new RegExp(
-	'^(https?:\\/\\/)?' +
-		'((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|' +
-		'((\\d{1,3}\\.){3}\\d{1,3}))' +
-		'(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*' +
-		'(\\?[;&a-z\\d%_.~+=-]*)?' +
-		'(\\#[-a-z\\d_]*)?$',
-	'i'
-);
-
 const proxySetting =
 	localStorage.getItem('dropdown-selected-text-proxy') ??
 	'Ultraviolet (default)';
@@ -69,10 +59,11 @@ function search(input) {
 			searchTemplate = 'https://google.com/search?q=%s';
 	}
 
-	if (urlPattern.test(input)) {
-		const url = new URL(input.includes('://') ? input : `http://${input}`);
-		return url.toString();
-	} else {
-		return searchTemplate.replace('%s', encodeURIComponent(input));
-	}
+	if (/^[a-z][a-z0-9+.-]*:/i.test(input) && !/^https?:/i.test(input)) {
+        throw new Error('Enter an HTTP or HTTPS website address.');
+    }
+    if (!/\s/.test(input) && (/^https?:\/\//i.test(input) || /^[^/]+\.[^/]+/.test(input))) {
+        return new URL(/^https?:\/\//i.test(input) ? input : `https://${input}`).href;
+    }
+    return searchTemplate.replace('%s', encodeURIComponent(input));
 }
