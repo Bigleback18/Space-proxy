@@ -393,3 +393,9 @@ out
 
 
 package-lock.json
+
+# Local Netlify folder
+.netlify
+
+# Static publish output
+dist/

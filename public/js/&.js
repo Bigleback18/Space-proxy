@@ -1,56 +1,58 @@
 // & is the name of the proxy page, so &.js is the js for the proxy page minus the actual proxy code, because thats long enough to cause readability issues
 
 let encodedUrl = '';
+let navigationId = 0;
+let loadTimer;
+function finishLoading() {
+    clearTimeout(loadTimer);
+    document.querySelector('.spinnerParent').style.display = 'none';
+    document.querySelector('.spinner').style.display = 'none';
+}
+function showBrowseError(message) {
+    finishLoading();
+    document.getElementById('intospace').style.display = 'none';
+    const panel = document.getElementById('browseError');
+    panel.hidden = false;
+    panel.querySelector('p').textContent = message;
+}
 async function executeSearch(query) {
-	encodedUrl = swConfigSettings.prefix + __uv$config.encodeUrl(search(query));
-	localStorage.setItem('input', query);
-	localStorage.setItem('output', encodedUrl);
-	document.querySelectorAll('.spinnerParent')[0].style.display = 'block';
-	document.querySelectorAll('.spinner')[0].style.display = 'block';
-	document.getElementById('gointospace').style.display = 'none';
-	const iframe = document.getElementById('intospace');
-	await registerSW();
-	iframe.src = encodedUrl;
-	await registerSW().then(async () => {
-		await setTransports();
-		setTimeout(() => {
-			iframe.src = iframe.src;
-		}, 100);
-	});
-	iframe.style.display = 'block';
-
-	if (iframe.src) {
-		document.querySelector('.shortcuts').style.display = 'none';
-		document.querySelector('.shortcutsBig').style.display = 'none';
-	}
-
-	document.querySelectorAll('input').forEach(input => input.blur());
-
-	// make check for uv error
-	iframe.addEventListener('load', function () {
-		const iframeDocument =
-			iframe.contentDocument || iframe.contentWindow.document;
-		const errorList = iframeDocument.querySelectorAll('ul li');
-		if (
-			errorList &&
-			Array.from(errorList).some(
-				li =>
-					li.textContent.trim() ===
-					'Checking your internet connection'
-			)
-		) {
-			iframe.src = '/500';
-		}
-
-		startURLMonitoring();
-	});
+    if (!query.trim()) return;
+    const attempt = ++navigationId;
+    document.getElementById('browseError').hidden = true;
+    try {
+        encodedUrl = swConfigSettings.prefix + __uv$config.encodeUrl(search(query));
+        localStorage.setItem('input', query);
+        localStorage.setItem('output', encodedUrl);
+        document.querySelector('.spinnerParent').style.display = 'block';
+        document.querySelector('.spinner').style.display = 'block';
+        document.getElementById('gointospace').style.display = 'none';
+        document.querySelector('.shortcuts').style.display = 'none';
+        document.querySelector('.shortcutsBig').style.display = 'none';
+        clearTimeout(loadTimer);
+        loadTimer = setTimeout(() => {
+            if (attempt === navigationId) showBrowseError('This website is taking too long to respond. Try again or open it in a new tab.');
+        }, 30000);
+        await registerSW();
+        if (attempt !== navigationId) return;
+        const frame = document.getElementById('intospace');
+        frame.src = encodedUrl;
+        frame.style.display = 'block';
+        address2.value = search(query);
+        document.querySelectorAll('input').forEach(input => input.blur());
+    } catch (error) {
+        if (attempt === navigationId) showBrowseError(error.message || 'Browsing could not start. Please try again.');
+    }
 }
 
-let historyArray = JSON.parse(localStorage.getItem('historyArray')) || [];
-let currentIndex = parseInt(localStorage.getItem('currentIndex')) || -1;
+let historyArray = [];
+try {
+    const saved = JSON.parse(localStorage.getItem('historyArray'));
+    if (Array.isArray(saved)) historyArray = saved.filter(url => typeof url === 'string' && url.startsWith(location.origin + swConfigSettings.prefix));
+} catch { /* Discard malformed browser history so browsing can still start. */ }
+let currentIndex = -1;
 
 if (historyArray.length > 0) {
-	currentIndex = historyArray.length;
+	currentIndex = historyArray.length - 1;
 	saveHistory();
 }
 
@@ -59,14 +61,16 @@ function saveHistory() {
 	localStorage.setItem('currentIndex', currentIndex.toString());
 }
 
+let urlMonitor;
 function startURLMonitoring() {
+	if (urlMonitor) return;
 	const iframe = document.getElementById('intospace');
-	let lastUrl = iframe.contentWindow.location.href;
+	let lastUrl = '';
 
 	const checkIframeURL = () => {
 		try {
 			const currentUrl = iframe.contentWindow.location.href;
-			if (currentUrl !== lastUrl) {
+			if (currentUrl.includes(swConfigSettings.prefix) && currentUrl !== lastUrl) {
 				lastUrl = currentUrl;
 
 				if (historyArray[currentIndex] !== currentUrl) {
@@ -90,7 +94,7 @@ function startURLMonitoring() {
 		}
 	};
 
-	setInterval(checkIframeURL, 250);
+	urlMonitor = setInterval(checkIframeURL, 250);
 }
 
 function updateGointospace2(url) {
@@ -162,6 +166,7 @@ address2.addEventListener('blur', function () {
 	}
 });
 
+document.querySelector('.utilityBar .search-header__button')?.addEventListener('click', () => executeSearch(address2.value));
 const refreshButton = document.querySelector('.refreshButton');
 const homeButton = document.querySelector('.homeButton');
 const fullscreenButton = document.querySelector('.fullscreenButton');
@@ -249,15 +254,29 @@ function updateButtonStates() {
 		forwardButton.style.cursor = 'default';
 	}
 }
+let browserReady;
 async function registerSW() {
-	if ('serviceWorker' in navigator) {
-		await setTransports();
-		await navigator.serviceWorker
-			.register(swFile, { scope: swConfigSettings.prefix })
-			.catch(error => {
-				console.error('ServiceWorker registration failed:', error);
-			});
-	}
+    if (!('serviceWorker' in navigator) || !window.isSecureContext) {
+        throw new Error('Browsing requires HTTPS and a browser with service worker support.');
+    }
+    if (!browserReady) browserReady = (async () => {
+        const registration = await navigator.serviceWorker.register(swFile, {
+            scope: swConfigSettings.prefix, updateViaCache: 'none'
+        });
+        if (!registration.active) await new Promise((resolve, reject) => {
+            const worker = registration.installing || registration.waiting;
+            if (!worker) return reject(new Error('The browser worker did not start. Reload and try again.'));
+            const timer = setTimeout(() => reject(new Error('The browser worker did not activate. Reload and try again.')), 12000);
+            function check() {
+                if (worker.state === 'activated') { clearTimeout(timer); resolve(); }
+                if (worker.state === 'redundant') { clearTimeout(timer); reject(new Error('The browser worker failed to install.')); }
+            }
+            worker.addEventListener('statechange', check);
+            check();
+        });
+        await setTransports();
+    })().catch(error => { browserReady = null; throw error; });
+    return browserReady;
 }
 // register event listeners for shit
 if (address1) {
@@ -329,10 +348,10 @@ document.addEventListener('DOMContentLoaded', function () {
 					}
 					executeSearch(item.url);
 				} else {
-					console.error('Param not found in json file :(');
+					executeSearch(queryParam);
 				}
 			})
-			.catch(error => console.error('Error fetching json:', error));
+			.catch(() => executeSearch(queryParam));
 		document.querySelector('.utilityBar').style.display = 'block';
 		document.getElementById('intospace').style.height = 'calc(100% - 3.633em)';
 		document.getElementById('intospace').style.top = '3.633em';
@@ -386,31 +405,37 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 const iframe = document.getElementById('intospace');
-const observer = new MutationObserver(function (mutationsList) {
-	mutationsList.forEach(function (mutation) {
-		if (
-			mutation.type === 'attributes' &&
-			mutation.attributeName === 'src'
-		) {
-			iframe.addEventListener(
-				'load',
-				function () {
-					const initialUrl = iframe.contentWindow.location.href;
-					updateGointospace2(initialUrl);
-					startURLMonitoring();
-				},
-				{ once: true }
-			);
-		}
-	});
+iframe.addEventListener('load', () => {
+    if (!iframe.getAttribute('src')) return;
+    finishLoading();
+    try {
+        const url = iframe.contentWindow.location.href;
+        if (url.includes(swConfigSettings.prefix)) updateGointospace2(url);
+    } catch { /* Some destinations navigate to another origin. */ }
 });
-
-if (iframe) {
-	observer.observe(iframe, {
-		attributes: true,
-		attributeFilter: ['src']
-	});
+navigator.serviceWorker?.addEventListener('message', event => {
+    if (event.data?.type === 'space:load-error' && event.data.url === new URL(encodedUrl, location.origin).href) {
+        showBrowseError('The website could not be reached. Try again or open it in a new tab.');
+    }
+});
+iframe.addEventListener('error', () => showBrowseError('The page could not load. Check your connection and try again.'));
+document.getElementById('browseRetry').addEventListener('click', () => executeSearch(localStorage.getItem('input') || address2.value));
+document.getElementById('browseOpen').addEventListener('click', () => {
+    try { window.open(search(localStorage.getItem('input') || address2.value), '_blank', 'noopener,noreferrer'); }
+    catch (error) { showBrowseError(error.message); }
+});
+for (const address of [address1, address2]) {
+    address?.closest('form')?.addEventListener('submit', event => {
+        event.preventDefault();
+        executeSearch(address.value);
+    });
 }
+window.addEventListener('online', () => {
+    if (!document.getElementById('browseError').hidden) {
+        browserReady = null;
+        executeSearch(localStorage.getItem('input') || address2.value);
+    }
+});
 
 let devToggle = false;
 let erudaScriptLoaded = false;

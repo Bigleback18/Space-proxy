@@ -3,19 +3,12 @@
 	<head>
 		<title>Space</title>
 		<link rel="icon" type="icon/x-icon" href="/assets/favicon.ico" />
-		<script src="/libcurl/index.js"></script>
+
 		<script src="/baremux/index.js"></script>
-		<script src="/epoxy/index.js"></script>
+
 		<script src="/@/uv.bundle.js"></script>
 		<script src="/@/uv.config.js"></script>
-		<script src="/$/scramjet.config.js"></script>
-        <script src="/$/scramjet.all.js"></script>
-        <script src="/M/meteor.codecs.js"></script>
-        <script src="/M/meteor.config.js"></script>
-        <script src="/M/meteor.bundle.js"></script>
-		<script src="/~/eclipse.codecs.js"></script>
-        <script src="/~/eclipse.config.js"></script>
-        <script src="/&/sandstone.js"></script>
+
 
 
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -327,7 +320,7 @@
 				<div style="margin-left: 3.5vw" class="shortcutsBig"></div>
 			</div>
 		</div>
-		<iframe
+		<iframe title="Browsing window"
 			id="intospace"
 			style="
 				display: none;
@@ -357,7 +350,13 @@
 				<div class="spinner1"></div>
 			</div>
 		</div>
-		<div class="blob"></div>
+		<section id="browseError" hidden role="alert" style="position:fixed;inset:25% 15%;z-index:10000000;background:#252525;color:white;padding:32px;border-radius:16px;text-align:center">
+            <h2>Unable to load this page</h2>
+            <p></p>
+            <button id="browseRetry" type="button">Try again</button>
+            <button id="browseOpen" type="button">Open in new tab</button>
+        </section>
+        <div class="blob"></div>
 		<div style="z-index: -998; position: fixed" class="blobbig"></div>
 		<div class="blobsmall"></div>
 		<div class="blobtop"></div>
@@ -475,7 +474,7 @@
 			});
 		</script>
 		<script src="/js/localforage.min.js"></script>
-		<script src="/js/c.js"></script>
+
 		<script>
 		// Attach open modal logic to button
 		document.addEventListener('DOMContentLoaded', function() {
